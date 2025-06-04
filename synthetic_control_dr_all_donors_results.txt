@@ -1,0 +1,19 @@
+Covariates: ('Total_Bilateral_Trade',)
+Standardized: True
+Donor Pool: all
+Pre-treatment Start Year: 2001
+Pre-treatment RMSE: 4,216,846,060.63
+
+All Donor Weights:
+Country 84: 0.000000
+Country 320: 0.531305
+Country 591: 0.468695
+Country 600: 0.000000
+Country 659: 0.000000
+Country 662: 0.000000
+Country 748: 0.000000
+Country 585: 0.000000
+
+Treatment Effect (2018-2019):
+2018: -508,834,206.87
+2019: 13,593,246,601.26

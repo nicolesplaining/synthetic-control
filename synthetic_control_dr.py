@@ -4,13 +4,27 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import itertools
 
+# Read the combined data file
 df = pd.read_csv('all_countries_trade_with_china_2000_2019.csv')
 
-TREATMENT_YEAR = 2017
+# Print data summary
+print("\nData summary:")
+print("Total number of records:", len(df))
+print("Number of unique countries:", df['reporterCode'].nunique())
+print("Years covered:", sorted(df['Year'].unique()))
+
+TREATMENT_YEAR = 2018
 POST_TREATMENT_YEARS = list(range(TREATMENT_YEAR, 2020))
 
-panama_data = df[df['reporterCode'] == 591].copy() # panama reporterCode 591
-donor_data = df[df['reporterCode'] != 591].copy()
+# Filter for DR data and donor data
+dr_data = df[df['reporterCode'] == 214].copy()  # DR reporterCode 214
+donor_data = df[df['reporterCode'] != 214].copy()
+
+# Print data summary
+print("\nDR data shape:", dr_data.shape)
+print("Donor data shape:", donor_data.shape)
+print("Number of donor countries:", donor_data['reporterCode'].nunique())
+print("\nDR data columns:", dr_data.columns.tolist())
 
 all_covariates = ['Total_Bilateral_Trade', 'CIFValue', 'FOBValue', 'qty', 'netWgt', 'grossWgt']
 
@@ -23,36 +37,37 @@ standardize_options = [True, False]
 def get_all_donors(donor_data):
     return donor_data['reporterCode'].unique()
 
-def get_correlated_donors(donor_data, pa_data, PRE_TREATMENT_YEARS, threshold=0):
+def get_correlated_donors(donor_data, dr_data, PRE_TREATMENT_YEARS, threshold=0):
     donor_correlations = {}
-    pa_years = set(pa_data[pa_data['Year'].isin(PRE_TREATMENT_YEARS)]['Year'])
+    dr_years = set(dr_data[dr_data['Year'].isin(PRE_TREATMENT_YEARS)]['Year'])
     for code in donor_data['reporterCode'].unique():
         donor = donor_data[donor_data['reporterCode'] == code]
         donor_years = set(donor[donor['Year'].isin(PRE_TREATMENT_YEARS)]['Year'])
-        common_years = sorted(list(pa_years & donor_years))
+        common_years = sorted(list(dr_years & donor_years))
         if len(common_years) < 10:
-            continue
-        pa_vals = pa_data[pa_data['Year'].isin(common_years)]['CIFValue']
-        donor_vals = donor[donor['Year'].isin(common_years)]['CIFValue']
-        if len(pa_vals) != len(donor_vals):
-            continue
-        if len(pa_vals) < 2:
-            continue
-        correlation = np.corrcoef(donor_vals, pa_vals)[0,1]
+            continue  # skip donors with too little overlap
+        dr_vals = dr_data[dr_data['Year'].isin(common_years)]['Total_Bilateral_Trade']
+        donor_vals = donor[donor['Year'].isin(common_years)]['Total_Bilateral_Trade']
+        if len(dr_vals) != len(donor_vals):
+            continue  # skip if still mismatched
+        if len(dr_vals) < 2:
+            continue  # skip if not enough data for correlation
+        correlation = np.corrcoef(donor_vals, dr_vals)[0,1]
         if np.isnan(correlation):
             continue
         if correlation > threshold:
             donor_correlations[code] = correlation
     return np.array(list(donor_correlations.keys()))
 
-def get_similar_volume_donors(donor_data, pa_data, PRE_TREATMENT_YEARS, std_threshold=1):
-    pa_mean = pa_data[pa_data['Year'].isin(PRE_TREATMENT_YEARS)]['CIFValue'].mean()
-    pa_std = pa_data[pa_data['Year'].isin(PRE_TREATMENT_YEARS)]['CIFValue'].std()
+def get_similar_volume_donors(donor_data, dr_data, PRE_TREATMENT_YEARS, std_threshold=1):
+    dr_mean = dr_data[dr_data['Year'].isin(PRE_TREATMENT_YEARS)]['Total_Bilateral_Trade'].mean()
+    dr_std = dr_data[dr_data['Year'].isin(PRE_TREATMENT_YEARS)]['Total_Bilateral_Trade'].std()
+    
     similar_donors = []
     for code in donor_data['reporterCode'].unique():
         donor = donor_data[donor_data['reporterCode'] == code]
-        donor_mean = donor[donor['Year'].isin(PRE_TREATMENT_YEARS)]['CIFValue'].mean()
-        if abs(donor_mean - pa_mean) <= std_threshold * pa_std:
+        donor_mean = donor[donor['Year'].isin(PRE_TREATMENT_YEARS)]['Total_Bilateral_Trade'].mean()
+        if abs(donor_mean - dr_mean) <= std_threshold * dr_std:
             similar_donors.append(code)
     return np.array(similar_donors)
 
@@ -67,8 +82,8 @@ def get_complete_data_donors(donor_data, PRE_TREATMENT_YEARS):
 def get_donor_pool_options(PRE_TREATMENT_YEARS):
     return {
         'all': lambda d: get_all_donors(d),
-        'correlated': lambda d: get_correlated_donors(d, panama_data, PRE_TREATMENT_YEARS),
-        'similar_volume': lambda d: get_similar_volume_donors(d, panama_data, PRE_TREATMENT_YEARS),
+        'correlated': lambda d: get_correlated_donors(d, dr_data, PRE_TREATMENT_YEARS),
+        'similar_volume': lambda d: get_similar_volume_donors(d, dr_data, PRE_TREATMENT_YEARS),
         'complete_data': lambda d: get_complete_data_donors(d, PRE_TREATMENT_YEARS)
     }
 
@@ -76,7 +91,7 @@ best_overall_rmse = float('inf')
 best_overall_result = None
 best_overall_start_year = None
 
-for start_year in range(2000, 2007):
+for start_year in range(2001, 2013):  # Adjusted range for DR data availability
     PRE_TREATMENT_YEARS = list(range(start_year, TREATMENT_YEAR))
     ALL_YEARS = PRE_TREATMENT_YEARS + POST_TREATMENT_YEARS
     donor_pool_options = get_donor_pool_options(PRE_TREATMENT_YEARS)
@@ -100,7 +115,7 @@ for start_year in range(2000, 2007):
         std = all_pre_matrix.std(axis=0)
         std[std == 0] = 1
 
-        panama_pre = panama_data.set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
+        dr_pre = dr_data.set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
 
         donor_pre_matrix = np.zeros((num_covs, num_years, num_donors))
         for i, code in enumerate(donor_countries):
@@ -109,16 +124,16 @@ for start_year in range(2000, 2007):
 
         # standardize
         if standardize:
-            panama_pre = (panama_pre - mean[:, None]) / std[:, None]
+            dr_pre = (dr_pre - mean[:, None]) / std[:, None]
             for i in range(num_donors):
                 donor_pre_matrix[:, :, i] = (donor_pre_matrix[:, :, i] - mean[:, None]) / std[:, None]
 
         # obj function with regularization and penalty
-        def synthetic_control_objective(weights, donor_matrix, panama_matrix, reg_param=1e-6, penalty_param=1e3):
+        def synthetic_control_objective(weights, donor_matrix, dr_matrix, reg_param=1e-6, penalty_param=1e3):
             synthetic = np.tensordot(donor_matrix, weights, axes=([2], [0]))
             reg_term = reg_param * np.sum(weights ** 2)
             penalty_term = penalty_param * (np.sum(weights) - 1) ** 2
-            return np.sum((synthetic - panama_matrix) ** 2) + reg_term + penalty_term
+            return np.sum((synthetic - dr_matrix) ** 2) + reg_term + penalty_term
 
         initial_weights = np.ones(num_donors) / num_donors
         bounds = [(0, 1) for _ in range(num_donors)]
@@ -127,7 +142,7 @@ for start_year in range(2000, 2007):
         result = minimize(
             synthetic_control_objective,
             initial_weights,
-            args=(donor_pre_matrix, panama_pre),
+            args=(donor_pre_matrix, dr_pre),
             method='L-BFGS-B',
             bounds=bounds,
             options={'maxiter': 1000, 'ftol': 1e-8}
@@ -137,17 +152,17 @@ for start_year in range(2000, 2007):
         optimal_weights = result.x / np.sum(result.x)
 
         # synthetic control for all years (unstandardized)
-        panama_actual = panama_data.set_index('Year').reindex(ALL_YEARS)['CIFValue'].fillna(0).values
+        dr_actual = dr_data.set_index('Year').reindex(ALL_YEARS)['Total_Bilateral_Trade'].fillna(0).values
         synthetic_control = np.zeros(len(ALL_YEARS))
         for i, code in enumerate(donor_countries):
-            donor_country = donor_data[donor_data['reporterCode'] == code].set_index('Year').reindex(ALL_YEARS)['CIFValue'].fillna(0).values
+            donor_country = donor_data[donor_data['reporterCode'] == code].set_index('Year').reindex(ALL_YEARS)['Total_Bilateral_Trade'].fillna(0).values
             synthetic_control += optimal_weights[i] * donor_country
 
         # treatment effect
-        treatment_effect = panama_actual[len(PRE_TREATMENT_YEARS):] - synthetic_control[len(PRE_TREATMENT_YEARS):]
+        treatment_effect = dr_actual[len(PRE_TREATMENT_YEARS):] - synthetic_control[len(PRE_TREATMENT_YEARS):]
 
         # pre-treatment RMSE
-        pre_treatment_rmse = np.sqrt(np.mean((panama_actual[:len(PRE_TREATMENT_YEARS)] - 
+        pre_treatment_rmse = np.sqrt(np.mean((dr_actual[:len(PRE_TREATMENT_YEARS)] - 
                                             synthetic_control[:len(PRE_TREATMENT_YEARS)]) ** 2))
 
         if pre_treatment_rmse < best_rmse:
@@ -159,7 +174,7 @@ for start_year in range(2000, 2007):
                 'weights': optimal_weights,
                 'donor_countries': donor_countries,
                 'synthetic_control': synthetic_control,
-                'panama_actual': panama_actual,
+                'dr_actual': dr_actual,
                 'treatment_effect': treatment_effect,
                 'pre_treatment_rmse': pre_treatment_rmse,
                 'start_year': start_year
@@ -169,17 +184,17 @@ for start_year in range(2000, 2007):
         best_overall_result = best_result
         best_overall_start_year = start_year
         plt.figure(figsize=(12, 6))
-        plt.plot(list(range(start_year, 2020)), best_result['panama_actual'], label='Panama', linewidth=2)
+        plt.plot(list(range(start_year, 2020)), best_result['dr_actual'], label='Dominican Republic', linewidth=2)
         plt.plot(list(range(start_year, 2020)), best_result['synthetic_control'], label='Synthetic Control', linewidth=2)
         plt.axvline(x=TREATMENT_YEAR, color='r', linestyle='--', label='Treatment Year')
         plt.xlabel('Year')
-        plt.ylabel('Imports from China (CIF Value)')
+        plt.ylabel('Total Bilateral Trade with China')
         plt.title(f'Best Synthetic Control: {best_result["covariates"]} | Standardize={best_result["standardize"]} | Pool={best_result["donor_pool"]} | Start={start_year}')
         plt.legend()
         plt.grid(True)
-        plt.savefig('best_synthetic_control_panama.png')
+        plt.savefig('best_synthetic_control_dr.png')
         plt.close()
-        with open('best_synthetic_control_results.txt', 'w') as f:
+        with open('best_synthetic_control_dr_results.txt', 'w') as f:
             f.write(f'Best Covariates: {best_result["covariates"]}\n')
             f.write(f'Standardized: {best_result["standardize"]}\n')
             f.write(f'Donor Pool: {best_result["donor_pool"]}\n')
@@ -195,8 +210,6 @@ for start_year in range(2000, 2007):
 # After the main loop, save the best 'all' donor pool result for the best pre-treatment start year
 if best_overall_result is not None:
     # Find the best 'all' donor pool result for the best start year
-    TREATMENT_YEAR = 2017
-    POST_TREATMENT_YEARS = list(range(TREATMENT_YEAR, 2020))
     start_year = best_overall_result['start_year']
     PRE_TREATMENT_YEARS = list(range(start_year, TREATMENT_YEAR))
     ALL_YEARS = PRE_TREATMENT_YEARS + POST_TREATMENT_YEARS
@@ -215,26 +228,26 @@ if best_overall_result is not None:
         mean = all_pre_matrix.mean(axis=0)
         std = all_pre_matrix.std(axis=0)
         std[std == 0] = 1
-        panama_pre = panama_data.set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
+        dr_pre = dr_data.set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
         donor_pre_matrix = np.zeros((num_covs, num_years, num_donors))
         for i, code in enumerate(donor_countries):
             donor_country = donor_data[donor_data['reporterCode'] == code].set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
             donor_pre_matrix[:, :, i] = donor_country
         if standardize:
-            panama_pre = (panama_pre - mean[:, None]) / std[:, None]
+            dr_pre = (dr_pre - mean[:, None]) / std[:, None]
             for i in range(num_donors):
                 donor_pre_matrix[:, :, i] = (donor_pre_matrix[:, :, i] - mean[:, None]) / std[:, None]
-        def synthetic_control_objective(weights, donor_matrix, panama_matrix, reg_param=1e-6, penalty_param=1e3):
+        def synthetic_control_objective(weights, donor_matrix, dr_matrix, reg_param=1e-6, penalty_param=1e3):
             synthetic = np.tensordot(donor_matrix, weights, axes=([2], [0]))
             reg_term = reg_param * np.sum(weights ** 2)
             penalty_term = penalty_param * (np.sum(weights) - 1) ** 2
-            return np.sum((synthetic - panama_matrix) ** 2) + reg_term + penalty_term
+            return np.sum((synthetic - dr_matrix) ** 2) + reg_term + penalty_term
         initial_weights = np.ones(num_donors) / num_donors
         bounds = [(0, 1) for _ in range(num_donors)]
         result = minimize(
             synthetic_control_objective,
             initial_weights,
-            args=(donor_pre_matrix, panama_pre),
+            args=(donor_pre_matrix, dr_pre),
             method='L-BFGS-B',
             bounds=bounds,
             options={'maxiter': 1000, 'ftol': 1e-8}
@@ -242,13 +255,13 @@ if best_overall_result is not None:
         if not result.success:
             continue
         optimal_weights = result.x / np.sum(result.x)
-        panama_actual = panama_data.set_index('Year').reindex(ALL_YEARS)['CIFValue'].fillna(0).values
+        dr_actual = dr_data.set_index('Year').reindex(ALL_YEARS)['Total_Bilateral_Trade'].fillna(0).values
         synthetic_control = np.zeros(len(ALL_YEARS))
         for i, code in enumerate(donor_countries):
-            donor_country = donor_data[donor_data['reporterCode'] == code].set_index('Year').reindex(ALL_YEARS)['CIFValue'].fillna(0).values
+            donor_country = donor_data[donor_data['reporterCode'] == code].set_index('Year').reindex(ALL_YEARS)['Total_Bilateral_Trade'].fillna(0).values
             synthetic_control += optimal_weights[i] * donor_country
-        treatment_effect = panama_actual[len(PRE_TREATMENT_YEARS):] - synthetic_control[len(PRE_TREATMENT_YEARS):]
-        pre_treatment_rmse = np.sqrt(np.mean((panama_actual[:len(PRE_TREATMENT_YEARS)] - 
+        treatment_effect = dr_actual[len(PRE_TREATMENT_YEARS):] - synthetic_control[len(PRE_TREATMENT_YEARS):]
+        pre_treatment_rmse = np.sqrt(np.mean((dr_actual[:len(PRE_TREATMENT_YEARS)] - 
                                             synthetic_control[:len(PRE_TREATMENT_YEARS)]) ** 2))
         if pre_treatment_rmse < best_all_rmse:
             best_all_rmse = pre_treatment_rmse
@@ -259,24 +272,24 @@ if best_overall_result is not None:
                 'weights': optimal_weights,
                 'donor_countries': donor_countries,
                 'synthetic_control': synthetic_control,
-                'panama_actual': panama_actual,
+                'dr_actual': dr_actual,
                 'treatment_effect': treatment_effect,
                 'pre_treatment_rmse': pre_treatment_rmse,
                 'start_year': start_year
             }
     if best_all_result is not None:
         plt.figure(figsize=(12, 6))
-        plt.plot(list(range(start_year, 2020)), best_all_result['panama_actual'], label='Panama', linewidth=2)
+        plt.plot(list(range(start_year, 2020)), best_all_result['dr_actual'], label='Dominican Republic', linewidth=2)
         plt.plot(list(range(start_year, 2020)), best_all_result['synthetic_control'], label='Synthetic Control (All Donors)', linewidth=2)
         plt.axvline(x=TREATMENT_YEAR, color='r', linestyle='--', label='Treatment Year')
         plt.xlabel('Year')
-        plt.ylabel('Imports from China (CIF Value)')
+        plt.ylabel('Total Bilateral Trade with China')
         plt.title(f'Synthetic Control (All Donors): {best_all_result["covariates"]} | Standardize={best_all_result["standardize"]} | Start={start_year}')
         plt.legend()
         plt.grid(True)
-        plt.savefig('synthetic_control_all_donors.png')
+        plt.savefig('synthetic_control_dr_all_donors.png')
         plt.close()
-        with open('synthetic_control_all_donors_results.txt', 'w') as f:
+        with open('synthetic_control_dr_all_donors_results.txt', 'w') as f:
             f.write(f'Covariates: {best_all_result["covariates"]}\n')
             f.write(f'Standardized: {best_all_result["standardize"]}\n')
             f.write(f'Donor Pool: all\n')

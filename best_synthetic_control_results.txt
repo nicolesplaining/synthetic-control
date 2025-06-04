@@ -1,14 +1,17 @@
-Best Covariates: ('Total_Bilateral_Trade', 'grossWgt')
+Best Covariates: ('CIFValue',)
 Standardized: True
 Donor Pool: similar_volume
 Pre-treatment Start Year: 2000
-Pre-treatment RMSE: 3,018,663,661.94
+Pre-treatment RMSE: 4,964,816,052.65
 
 All Donor Weights:
-Country 320: 0.317184
-Country 600: 0.682816
+Country 188: 0.008730
+Country 222: 0.000000
+Country 320: 0.000000
+Country 600: 0.991270
+Country 214: 0.000000
 
 Treatment Effect (2018-2019):
-2017: -4,502,194,381.90
-2018: -4,469,413,078.03
-2019: -6,630,474,214.94
+2017: 2,791,109,538.20
+2018: 3,198,620,596.93
+2019: 1,918,870,060.43

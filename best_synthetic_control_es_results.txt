@@ -1,0 +1,25 @@
+Best Covariates: ('CIFValue',)
+Standardized: False
+Log Transformed: True
+Donor Pool: all
+Pre-treatment Start Year: 2013
+Pre-treatment RMSE: 36,619,340.51
+
+Covariate Weights:
+CIFValue: 1.000000
+
+All Donor Weights:
+Country 84: 0.000000
+Country 188: 0.477330
+Country 320: 0.366102
+Country 591: 0.077541
+Country 600: 0.000000
+Country 659: 0.000783
+Country 662: 0.048105
+Country 748: 0.025862
+Country 214: 0.001824
+Country 585: 0.002454
+
+Treatment Effect (2018-2019):
+2018: 117,666,759.23
+2019: 118,052,137.99

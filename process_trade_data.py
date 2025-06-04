@@ -1,10 +1,20 @@
 import pandas as pd
 import glob
 import os
+import gzip
 
 def process_trade_data():
+    # Get all regular data files
     data_files = glob.glob('data/C_A_*_classic') + glob.glob('data/new/C_A_*_classic')
+    
+    # Get DR and ES data files
+    dr_files = glob.glob('data/dr/C_A_*_classic.gz')
+    es_files = glob.glob('data/es/C_A_*_classic.gz')
+    cr_files = glob.glob('data/cr/C_A_*_classic.gz')  # Add CR files
+    
     dfs = []
+    
+    # Process regular files
     for file in data_files:
         try:
             df = pd.read_csv(file, sep='\t', low_memory=False)
@@ -32,6 +42,93 @@ def process_trade_data():
         except Exception as e:
             print(f"Error processing {file}: {str(e)}")
     
+    # Process DR files
+    for file in dr_files:
+        try:
+            with gzip.open(file, 'rt') as f:
+                df = pd.read_csv(f, sep='\t', low_memory=False)
+                df = df[df['partnerCode'] == 156] # China partnerCode 156
+                year = int(file.split('_')[-2])
+                df['Year'] = year
+                if 2000 <= year <= 2019:
+                    numeric_cols = ['CIFValue', 'FOBValue', 'qty', 'netWgt', 'grossWgt']
+                    for col in numeric_cols:
+                        if col in df.columns:  
+                            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                        else:
+                            df[col] = 0 
+                    df['Total_Bilateral_Trade'] = df['CIFValue'] + df['FOBValue']
+                    grouped = df.groupby(['Year', 'reporterCode']).agg({
+                        'Total_Bilateral_Trade': 'sum',
+                        'CIFValue': 'sum',
+                        'FOBValue': 'sum',
+                        'qty': 'sum',
+                        'netWgt': 'sum',
+                        'grossWgt': 'sum'
+                    }).reset_index()
+                    
+                    dfs.append(grouped)
+        except Exception as e:
+            print(f"Error processing {file}: {str(e)}")
+    
+    # Process ES files
+    for file in es_files:
+        try:
+            with gzip.open(file, 'rt') as f:
+                df = pd.read_csv(f, sep='\t', low_memory=False)
+                df = df[df['partnerCode'] == 156] # China partnerCode 156
+                year = int(file.split('_')[-2])
+                df['Year'] = year
+                if 2000 <= year <= 2019:
+                    numeric_cols = ['CIFValue', 'FOBValue', 'qty', 'netWgt', 'grossWgt']
+                    for col in numeric_cols:
+                        if col in df.columns:  
+                            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                        else:
+                            df[col] = 0 
+                    df['Total_Bilateral_Trade'] = df['CIFValue'] + df['FOBValue']
+                    grouped = df.groupby(['Year', 'reporterCode']).agg({
+                        'Total_Bilateral_Trade': 'sum',
+                        'CIFValue': 'sum',
+                        'FOBValue': 'sum',
+                        'qty': 'sum',
+                        'netWgt': 'sum',
+                        'grossWgt': 'sum'
+                    }).reset_index()
+                    
+                    dfs.append(grouped)
+        except Exception as e:
+            print(f"Error processing {file}: {str(e)}")
+    
+    # Process CR files
+    for file in cr_files:
+        try:
+            with gzip.open(file, 'rt') as f:
+                df = pd.read_csv(f, sep='\t', low_memory=False)
+                df = df[df['partnerCode'] == 156] # China partnerCode 156
+                year = int(file.split('_')[-2])
+                df['Year'] = year
+                if 2000 <= year <= 2019:
+                    numeric_cols = ['CIFValue', 'FOBValue', 'qty', 'netWgt', 'grossWgt']
+                    for col in numeric_cols:
+                        if col in df.columns:  
+                            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                        else:
+                            df[col] = 0 
+                    df['Total_Bilateral_Trade'] = df['CIFValue'] + df['FOBValue']
+                    grouped = df.groupby(['Year', 'reporterCode']).agg({
+                        'Total_Bilateral_Trade': 'sum',
+                        'CIFValue': 'sum',
+                        'FOBValue': 'sum',
+                        'qty': 'sum',
+                        'netWgt': 'sum',
+                        'grossWgt': 'sum'
+                    }).reset_index()
+                    
+                    dfs.append(grouped)
+        except Exception as e:
+            print(f"Error processing {file}: {str(e)}")
+    
     if not dfs:
         print("No data found for years 2000-2019 with China as partner.")
         return
@@ -46,6 +143,17 @@ def process_trade_data():
         'netWgt': 'sum',
         'grossWgt': 'sum'
     })
+    
+    # Print summary of DR and ES data
+    for country_code, country_name in [(214, 'DR'), (222, 'El Salvador')]:
+        country_data = final_df[final_df['reporterCode'] == country_code]
+        if not country_data.empty:
+            print(f"\n{country_name} data summary:")
+            print(f"Years available: {sorted(country_data['Year'].unique())}")
+            print(f"Total records: {len(country_data)}")
+            print(f"\n{country_name} trade statistics:")
+            print(country_data.describe())
+    
     country_year_counts = final_df.groupby('reporterCode')['Year'].nunique()
     insufficient_countries = country_year_counts[country_year_counts < 10].index.tolist()
     if insufficient_countries:
@@ -53,6 +161,7 @@ def process_trade_data():
         for code in insufficient_countries:
             print(f"Country {code}")
         final_df = final_df[~final_df['reporterCode'].isin(insufficient_countries)]
+    
     final_df = final_df.sort_values(['Year', 'reporterCode'])
     final_df.to_csv('all_countries_trade_with_china_2000_2019.csv', index=False)
     print("\nData saved to 'all_countries_trade_with_china_2000_2019.csv'")

@@ -1,0 +1,12 @@
+Synthetic Control Results (pysyncon):
+
+Pre-treatment RMSE: 6,794,760,445.04
+
+Donor Weights:
+Country 320: 0.785000
+Country 600: 0.215000
+
+Treatment Effect (2017-2019):
+2017: -476,342,592.35
+2018: -450,595,804.14
+2019: -417,623,546.69
