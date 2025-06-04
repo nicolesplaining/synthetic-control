@@ -101,10 +101,8 @@ for start_year in range(2000, 2007):
         std = all_pre_matrix.std(axis=0)
         std[std == 0] = 1
 
-        # panama pre-treatment matrix (covariates × years)
         panama_pre = panama_data.set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
 
-        # donor pre-treatment matrix (covariates × years × donors)
         donor_pre_matrix = np.zeros((num_covs, num_years, num_donors))
         for i, code in enumerate(donor_countries):
             donor_country = donor_data[donor_data['reporterCode'] == code].set_index('Year').reindex(PRE_TREATMENT_YEARS)[list(covariates)].fillna(0).values.T
